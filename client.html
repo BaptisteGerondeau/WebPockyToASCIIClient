@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PockyToWeb</title>
+  <style>
+  .overlay {
+      display: none; /* Hidden by default */
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.8); /* Darken background */
+      z-index: 1000;
+    }
+
+    .overlay-content {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.9); /* Zoom-out effect */
+      background-color: white;
+      padding: 20px;
+      border-radius: 5px;
+      text-align: center;
+    }
+    </style>
+</head>
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
+/>
+<link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+<body>
+  <main class="container">
+  <div id="header">
+  <h1>PockyToWeb : Raster image to ASCII powered by Java</h1>
+  </div>
+  <div id="form">
+
+  <article>Select your image
+  <input type="file" id="fileInput" accept="image/jpeg" title="Select your image, JPEG or PNG only">
+  </article>
+
+  <select id="renderstyle" name="renderstyle" required title="Select a ASCII render style for the image">
+  <option selected disabled value="">
+    How would you like to render your image ?
+  </option>
+  <option value="raw">Raw ASCII (black and white)</option>
+  <option value="ansi">ANSI (8 colours)</option>
+  <option value="html">HTML (full colour)</option>
+
+  <fieldset>
+  <label>
+    <input id="invert" name="invert" type="checkbox" role="switch" title="Do you want to invert the colours before render ?" />
+    Invert Colours
+  </label>
+</fieldset>
+
+<textarea
+  id="key"
+  name="key"
+  placeholder="This string is used for encoding pixels to ASCII characters"
+  title="Encoding key used to swap pixels to characters, from darker to brighter"
+>
+</textarea>
+
+<input
+  id="dwidth"
+  name="dwidth"
+  placeholder="94"
+  title="Desired width of the image (height is determined automatically)"
+  type="number"
+>
+</input>
+
+</select>
+  <button onclick="uploadImage()">Convert</button>
+  </div>
+  </main>
+  <div id="overlay" class="overlay">
+  <div id="overlay-content" class="overlay-content">
+  <pre id="ASCIIART" style="background-color: #000000; font-weight: bold; padding: 4px 5px;letter-spacing: 5px; line-height: 13px"></pre>
+  <button title="Copy raw contents to clipboard" id="copyButton">Copy to Clipboard</button>
+  <button title="Close the overlay" id="closeButton">Close</button>
+  </div>
+  </div>
+
+  <!-- Include jQuery from a CDN -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <!-- Include jQuery UI from a CDN -->
+  <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+
+  <script>
+
+     jQuery(document).ready(function() {
+      // Initialize tooltips
+      $(document).tooltip();
+
+      document.getElementById('closeButton').addEventListener('click', function() {
+      document.getElementById('overlay').style.display = 'none';
+    });
+
+   // document.getElementById('key').placeholder = String.raw`${"`"}^",:;Il!i~+_-?][${"}"}{1)(|${"\/"}tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$`
+
+    })
+
+    function adjustZoom() {
+        const overlayContent = document.getElementById("overlay-content")
+        const preformattedText = document.getElementById("ASCIIART");
+
+        overlayContent.style.transform = 'translate(-50%, -50%) scale(1)';
+
+        const contentWidth = jQuery(preformattedText).width();
+        const contentHeight = jQuery(preformattedText).height();
+        console.log(contentWidth);
+
+        const maxWidth = jQuery(window).width() * 0.9;
+        console.log(maxWidth);
+        const maxHeight = jQuery(window).height() * 0.9;
+
+        const scaleWidth = maxWidth / contentWidth;
+        const scaleHeight = maxHeight / contentHeight;
+        const scale = Math.min(scaleWidth, scaleHeight, 1);
+
+        overlayContent.style.transform = `translate(-50%, -50%) scale(${scale})`;
+    }
+
+    async function uploadImage() {
+      const fileInput = document.getElementById('fileInput');
+      const file = fileInput.files[0];
+
+      if (!file || file.type !== 'image/jpeg') {
+        alert('Please select a JPEG image.');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('image', file);
+
+      try {
+        const uploadResponse = await fetch('http://localhost:8080/images', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          alert('Image upload failed: ' + errorText);
+          return;
+        }
+
+        const uploadResult = await uploadResponse.json();
+        console.log(uploadResult)
+        const imageId = uploadResult.id;
+
+        const type = document.getElementById('renderstyle').value;
+        const key = document.getElementById('key').value;
+        const dwidth = document.getElementById('dwidth').value;
+        const invert = document.getElementById('invert').value;
+
+        const asciiartForm = new FormData();
+        asciiartForm.append('imageid', imageId);
+        asciiartForm.append('type', type);
+        asciiartForm.append('key', key);
+        asciiartForm.append('dwidth', dwidth);
+        asciiartForm.append('invert', invert);
+
+        const postResponse = await fetch('http://localhost:8080/asciiart', {
+          method: 'POST',
+          body: asciiartForm
+        });
+
+        if (!postResponse.ok) {
+          const errorText = await postResponse.text();
+          alert('Second POST request failed: ' + errorText);
+          return;
+        }
+
+        const postResult = await postResponse.json();
+        console.log('Second API response:', postResult);
+        displayASCII(postResult.id)
+
+      } catch (error) {
+        alert('Error: ' + error.message);
+        console.error('Error:', error);
+      }
+    }
+    async function displayASCII(asciiartId) {
+      try {
+        const downloadResponse = await fetch(`http://localhost:8080/asciiart/${asciiartId}`)
+
+        document.getElementById('overlay').style.display = 'block';
+
+        document.getElementById('ASCIIART').innerHTML = await downloadResponse.text()
+        adjustZoom();
+      } catch (error) {
+              alert('Error: ' + error.message);
+              console.error('Error:', error);
+      }
+    }
+
+    document.getElementById('copyButton').addEventListener('click', function() {
+      const preformattedText = document.getElementById('ASCIIART').innerText;
+      navigator.clipboard.writeText(preformattedText).then(function() {
+        alert('Text copied to clipboard');
+      }, function(err) {
+        console.error('Could not copy text: ', err);
+      });
+    });
+  </script>
+</body>
+</html>
